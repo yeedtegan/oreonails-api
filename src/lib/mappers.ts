@@ -1,4 +1,4 @@
-// Row → API JSON shapes (camelCase). JSONB columns arrive already parsed.
+// Row → API JSON shapes (camelCase, parsed JSON columns, 0/1 → boolean).
 
 export interface ProductRow {
   handle: string;
@@ -6,7 +6,7 @@ export interface ProductRow {
   type: "set" | "bundle" | "tool";
   price: number;
   compare_at: number | null;
-  palette: [string, string, string, string];
+  palette: string;
   pattern: string;
   shape: string;
   rating: number;
@@ -15,9 +15,9 @@ export interface ProductRow {
   sets_included: number | null;
   rank: number;
   added: number;
-  images: string[];
-  active: boolean;
-  collections: string[] | null; // array_agg
+  images: string;
+  active: number;
+  collections: string | null; // GROUP_CONCAT
 }
 
 export function toProduct(r: ProductRow) {
@@ -27,7 +27,7 @@ export function toProduct(r: ProductRow) {
     type: r.type,
     price: r.price,
     ...(r.compare_at != null && { compareAt: r.compare_at }),
-    palette: r.palette,
+    palette: JSON.parse(r.palette) as [string, string, string, string],
     pattern: r.pattern,
     shape: r.shape,
     rating: r.rating,
@@ -36,9 +36,9 @@ export function toProduct(r: ProductRow) {
     ...(r.sets_included != null && { setsIncluded: r.sets_included }),
     rank: r.rank,
     added: r.added,
-    collections: r.collections ?? [],
-    images: r.images ?? [],
-    active: r.active,
+    collections: r.collections ? r.collections.split(",") : [],
+    images: JSON.parse(r.images || "[]") as string[],
+    active: r.active !== 0,
   };
 }
 export type Product = ReturnType<typeof toProduct>;
@@ -48,7 +48,7 @@ export interface CollectionRow {
   title: string;
   description: string;
   grp: string;
-  palette: string[];
+  palette: string;
   pattern: string;
   image: string | null;
   position?: number;
@@ -58,7 +58,7 @@ export const toCollection = (r: CollectionRow) => ({
   title: r.title,
   description: r.description,
   group: r.grp,
-  palette: r.palette,
+  palette: JSON.parse(r.palette) as string[],
   pattern: r.pattern,
   image: r.image ?? null,
 });
@@ -88,23 +88,23 @@ export const toReview = (r: ReviewRow) => ({
 
 export interface ArticleRow {
   slug: string;
-  tags: string[];
+  tags: string;
   title: string;
   excerpt: string;
   date: string;
-  palette: string[];
+  palette: string;
   pattern: string;
   image: string | null;
-  body: string[];
+  body: string;
 }
 export const toArticle = (r: ArticleRow, withBody = true) => ({
   slug: r.slug,
-  tags: r.tags ?? [],
+  tags: JSON.parse(r.tags || "[]") as string[],
   title: r.title,
   excerpt: r.excerpt,
   date: r.date,
-  palette: r.palette,
+  palette: JSON.parse(r.palette) as string[],
   pattern: r.pattern,
   image: r.image ?? null,
-  ...(withBody && { body: r.body }),
+  ...(withBody && { body: JSON.parse(r.body) as string[] }),
 });

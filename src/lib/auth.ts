@@ -1,7 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { one, run } from "../db/index.js";
+import { NOW, one, run } from "../db/index.js";
 import { config } from "../config.js";
 
 export interface User {
@@ -49,7 +49,7 @@ export const loadUser: MiddlewareHandler<AuthEnv> = async (c, next) => {
     user =
       (await one<User>(
         `SELECT u.id, u.name, u.email, u.points, u.created_at FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token = $1 AND s.expires_at > now()`,
+         WHERE s.token = $1 AND s.expires_at > ${NOW}`,
         [token],
       )) ?? null;
   }

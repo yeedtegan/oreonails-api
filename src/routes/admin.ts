@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { all, getSetting, one, Params, run, tx } from "../db/index.js";
+import { all, getSetting, NOW, one, Params, run, tx } from "../db/index.js";
 import { config } from "../config.js";
 import { requireAdmin } from "../lib/auth.js";
 import { getProduct, listProducts } from "../lib/catalog.js";
@@ -22,7 +22,7 @@ const checkHandle = (h: string) => {
   if (!HANDLE.test(h) || h.length > 100) throw new HTTPException(400, { message: "Handle must be lowercase letters, digits and dashes" });
   return h;
 };
-/** Integer path ids; anything else becomes a 404 instead of a Postgres type error. */
+/** Integer path ids; anything else becomes a 404. */
 const intParam = (v: string) => {
   const n = Number(v);
   if (!Number.isSafeInteger(n) || n < 1 || n > 2_147_483_647) throw new HTTPException(404, { message: "Not found" });
@@ -37,16 +37,17 @@ const imageUrl = z.string().max(500).regex(/^(\/uploads\/[\w.-]+|https:\/\/\S+)$
 /* ---------------- dashboard ---------------- */
 
 admin.get("/admin/stats", async (c) => {
+  const since = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')`;
   const [s, recent] = await Promise.all([
     one<Record<string, number>>(`SELECT
       (SELECT COUNT(*) FROM orders WHERE payment_status != 'pending') AS orders,
-      (SELECT COUNT(*) FROM orders WHERE payment_status != 'pending' AND created_at >= now() - interval '30 days') AS orders30d,
+      (SELECT COUNT(*) FROM orders WHERE payment_status != 'pending' AND created_at >= ${since}) AS orders30d,
       (SELECT COALESCE(SUM(total), 0) FROM orders WHERE payment_status != 'pending' AND status != 'Cancelled') AS revenue,
-      (SELECT COALESCE(SUM(total), 0) FROM orders WHERE payment_status != 'pending' AND status != 'Cancelled' AND created_at >= now() - interval '30 days') AS revenue30d,
+      (SELECT COALESCE(SUM(total), 0) FROM orders WHERE payment_status != 'pending' AND status != 'Cancelled' AND created_at >= ${since}) AS revenue30d,
       (SELECT COUNT(*) FROM orders WHERE payment_status != 'pending' AND status IN ('Processing','In production')) AS "toFulfil",
-      (SELECT COUNT(*) FROM orders WHERE payment_status = 'pending' AND created_at >= now() - interval '30 days') AS "abandoned30d",
-      (SELECT COUNT(*) FROM products WHERE active) AS products,
-      (SELECT COUNT(*) FROM products WHERE NOT active) AS "hiddenProducts",
+      (SELECT COUNT(*) FROM orders WHERE payment_status = 'pending' AND created_at >= ${since}) AS "abandoned30d",
+      (SELECT COUNT(*) FROM products WHERE active = 1) AS products,
+      (SELECT COUNT(*) FROM products WHERE active = 0) AS "hiddenProducts",
       (SELECT COUNT(*) FROM users) AS customers,
       (SELECT COUNT(*) FROM subscribers) AS subscribers,
       (SELECT COUNT(*) FROM contact_messages) AS messages,
@@ -175,10 +176,10 @@ admin.put("/admin/collections/:handle", async (c) => {
   const v = await body(c, collectionSchema);
   const row = (await one<CollectionRow>(
     `INSERT INTO collections (handle, title, description, grp, palette, pattern, image, position)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::int, (SELECT COALESCE(MAX(position), 0) + 1 FROM collections)))
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, (SELECT COALESCE(MAX(position), 0) + 1 FROM collections)))
      ON CONFLICT(handle) DO UPDATE SET title = excluded.title, description = excluded.description, grp = excluded.grp,
        palette = excluded.palette, pattern = excluded.pattern, image = excluded.image,
-       position = COALESCE($8::int, collections.position)
+       position = COALESCE($8, collections.position)
      RETURNING *`,
     [handle, v.title, v.description, v.group, JSON.stringify(v.palette), v.pattern, v.image ?? null, v.position ?? null],
   ))!;
@@ -244,7 +245,7 @@ const faqSchema = z.object({
 admin.post("/admin/faqs", async (c) => {
   const f = await body(c, faqSchema);
   const faq = await one(
-    `INSERT INTO faqs (q, a, category, position) VALUES ($1, $2, $3, COALESCE($4::int, (SELECT COALESCE(MAX(position), 0) + 1 FROM faqs)))
+    `INSERT INTO faqs (q, a, category, position) VALUES ($1, $2, $3, COALESCE($4, (SELECT COALESCE(MAX(position), 0) + 1 FROM faqs)))
      RETURNING id, q, a, category, position`,
     [f.q, f.a, f.category, f.position ?? null],
   );
@@ -254,7 +255,7 @@ admin.post("/admin/faqs", async (c) => {
 admin.put("/admin/faqs/:id", async (c) => {
   const f = await body(c, faqSchema);
   const faq = await one(
-    "UPDATE faqs SET q = $1, a = $2, category = $3, position = COALESCE($4::int, position) WHERE id = $5 RETURNING id, q, a, category, position",
+    "UPDATE faqs SET q = $1, a = $2, category = $3, position = COALESCE($4, position) WHERE id = $5 RETURNING id, q, a, category, position",
     [f.q, f.a, f.category, f.position ?? null, intParam(c.req.param("id"))],
   );
   if (!faq) throw notFound("FAQ");
@@ -289,7 +290,7 @@ admin.delete("/admin/reviews/:id", async (c) => {
     if (r.product_handle) {
       await run(
         `UPDATE products SET rating = CASE WHEN review_count > 1 THEN ROUND((rating * review_count - $1) / (review_count - 1), 2) ELSE 0 END,
-           review_count = GREATEST(review_count - 1, 0) WHERE handle = $2`,
+           review_count = MAX(review_count - 1, 0) WHERE handle = $2`,
         [r.rating, r.product_handle],
       );
     }
@@ -311,7 +312,7 @@ admin.get("/admin/orders", async (c) => {
   where.push(c.req.query("payment") === "pending" ? "payment_status = 'pending'" : "payment_status != 'pending'");
   if (q) {
     const like = p.add(`%${q.replace(/[%_\\]/g, "")}%`);
-    where.push(`(number ILIKE ${like} OR email ILIKE ${like} OR name ILIKE ${like})`);
+    where.push(`(number LIKE ${like} OR email LIKE ${like} OR name LIKE ${like})`);
   }
   const rows = await all<OrderRow>(
     `SELECT * FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC LIMIT ${p.add(Math.min(num(c.req.query("limit")) ?? 200, 500))}`,
@@ -329,7 +330,10 @@ admin.patch("/admin/orders/:number", async (c) => {
 
 /* ---------------- discounts & settings ---------------- */
 
-admin.get("/admin/discounts", async (c) => c.json({ discounts: await all("SELECT code, percent, active FROM discount_codes ORDER BY code") }));
+admin.get("/admin/discounts", async (c) => {
+  const rows = await all<{ code: string; percent: number; active: number }>("SELECT code, percent, active FROM discount_codes ORDER BY code");
+  return c.json({ discounts: rows.map((d) => ({ ...d, active: d.active === 1 })) });
+});
 
 admin.put("/admin/discounts/:code", async (c) => {
   const code = c.req.param("code").trim().toUpperCase();

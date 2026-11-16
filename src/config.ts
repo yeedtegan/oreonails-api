@@ -2,8 +2,7 @@ const env = process.env;
 
 export const config = {
   port: Number(env.PORT ?? 4000),
-  databaseUrl: env.DATABASE_URL ?? "postgres://oreonails:oreonails@localhost:5433/oreonails",
-  databasePoolSize: Number(env.DATABASE_POOL_SIZE ?? 10),
+  databasePath: env.DATABASE_PATH ?? "./data/oreonails.db",
   /** Where admin-uploaded images are stored; served at /uploads/*. */
   uploadsDir: env.UPLOADS_DIR ?? "./data/uploads",
   /** Comma-separated list of allowed browser origins for CORS. */

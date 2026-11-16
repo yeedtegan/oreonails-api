@@ -20,6 +20,7 @@ orders.post("/cart/quote", async (c) => {
   return c.json(await quote(items, code, shippingRate));
 });
 
+/** Raw `orders` row: addresses are JSON text and `accepts_marketing` is 0/1. */
 export interface OrderRow {
   number: string;
   user_id: number | null;
@@ -35,8 +36,8 @@ export interface OrderRow {
   status: string;
   created_at: string;
   phone: string | null;
-  shipping_address: Address | null;
-  billing_address: Address | null;
+  shipping_address: string | null;
+  billing_address: string | null;
   shipping_method: string | null;
   payment_method: string;
   payment_status: string;
@@ -45,7 +46,7 @@ export interface OrderRow {
   payment_detail: string | null;
   paid_at: string | null;
   access_key: string | null;
-  accepts_marketing: boolean;
+  accepts_marketing: number;
   points_awarded: number;
 }
 
@@ -78,7 +79,7 @@ type ItemRowWithOrder = ItemRow & { order_number: string };
 /** Serialises orders, loading all their items in one query. */
 export async function ordersJson(rows: OrderRow[]) {
   if (!rows.length) return [];
-  const items = await all<ItemRowWithOrder>("SELECT * FROM order_items WHERE order_number = ANY($1::text[]) ORDER BY id", [rows.map((o) => o.number)]);
+  const items = await all<ItemRowWithOrder>("SELECT * FROM order_items WHERE order_number IN (SELECT value FROM json_each($1)) ORDER BY id", [rows.map((o) => o.number)]);
   const byOrder = new Map<string, ItemRow[]>();
   for (const i of items) byOrder.set(i.order_number, [...(byOrder.get(i.order_number) ?? []), i]);
   return rows.map((o) => orderJsonWith(o, byOrder.get(o.number) ?? []));
@@ -103,14 +104,14 @@ function orderJsonWith(o: OrderRow, items: ItemRow[]) {
     status: o.status,
     createdAt: o.created_at,
     phone: o.phone,
-    shippingAddress: o.shipping_address,
-    billingAddress: o.billing_address,
+    shippingAddress: o.shipping_address ? (JSON.parse(o.shipping_address) as Address) : null,
+    billingAddress: o.billing_address ? (JSON.parse(o.billing_address) as Address) : null,
     shippingMethod: o.shipping_method,
     paymentMethod: o.payment_method,
     paymentStatus: o.payment_status,
     paymentDetail: o.payment_detail,
     paidAt: o.paid_at,
-    acceptsMarketing: o.accepts_marketing,
+    acceptsMarketing: o.accepts_marketing === 1,
     pointsAwarded: o.points_awarded,
     items: items.map((i) => ({
       handle: i.product_handle,

@@ -2,7 +2,7 @@ import { all, Params } from "../db/index.js";
 import { toProduct, type ProductRow } from "./mappers.js";
 
 const BASE = `
-  SELECT p.*, (SELECT array_agg(collection_handle) FROM product_collections pc WHERE pc.product_handle = p.handle) AS collections
+  SELECT p.*, (SELECT GROUP_CONCAT(collection_handle) FROM product_collections pc WHERE pc.product_handle = p.handle) AS collections
   FROM products p`;
 
 export const SORTS: Record<string, string> = {
@@ -43,9 +43,9 @@ export async function listProducts(f: ProductQuery = {}) {
   if (f.maxPrice != null) where.push(`p.price <= ${p.add(f.maxPrice)}`);
   if (f.q?.trim()) {
     const like = p.add(`%${f.q.trim().replace(/[%_\\]/g, "")}%`);
-    where.push(`(p.title ILIKE ${like} OR p.description ILIKE ${like} OR p.pattern ILIKE ${like}
+    where.push(`(p.title LIKE ${like} OR p.description LIKE ${like} OR p.pattern LIKE ${like}
       OR EXISTS (SELECT 1 FROM product_collections pc JOIN collections c ON c.handle = pc.collection_handle
-                 WHERE pc.product_handle = p.handle AND (c.title ILIKE ${like} OR c.handle ILIKE ${like})))`);
+                 WHERE pc.product_handle = p.handle AND (c.title LIKE ${like} OR c.handle LIKE ${like})))`);
   }
 
   const order = SORTS[f.sort ?? "featured"] ?? SORTS.featured;

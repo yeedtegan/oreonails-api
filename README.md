@@ -1,29 +1,23 @@
 # Oreo Nails API
 
-Node + [Hono](https://hono.dev) + PostgreSQL (via [`pg`](https://node-postgres.com)).
+Node + [Hono](https://hono.dev) + SQLite (built-in `node:sqlite`, Node ≥ 22.13). No native modules, no database server.
 
 ```bash
 npm install
-cp .env.example .env      # set DATABASE_URL if you don't use the bundled Docker Postgres
-npm run db:up             # local Postgres 17 in Docker on port 5433 (docker-compose.yml)
+cp .env.example .env      # optional
 npm run dev               # http://localhost:4000 — creates tables and seeds on first run
 npm run seed              # FULL RESET: wipes all tables (incl. users & orders) and reloads seed data
                           #   refuses when NODE_ENV=production unless you pass `-- --force`
 ```
 
-Seed data lives in `src/db/seed-data.ts`. Tables and indexes are created on startup (`CREATE … IF NOT EXISTS`
-in `src/db/index.ts`).
-
-### Moving from the old SQLite file
-
-```bash
-npm run import:sqlite -- ./data/oreonails.db   # replaces ALL Postgres data with the SQLite contents
-```
+Seed data lives in `src/db/seed-data.ts`. The DB file is `DATABASE_PATH` (default `./data/oreonails.db`);
+tables and indexes are created on startup (`CREATE … IF NOT EXISTS` in `src/db/index.ts`).
 
 ### Production
 
-Point `DATABASE_URL` at any managed Postgres (Neon, Supabase, RDS, Railway…). Append `?sslmode=require` if the
-provider needs TLS. `DATABASE_POOL_SIZE` (default 10) is per app instance.
+SQLite is a file, so the server needs a **persistent disk** (a VPS, or a Fly.io / Railway volume) and must run as
+**one instance**. Keep `DATABASE_PATH` and `UPLOADS_DIR` on that disk and back the DB up (e.g. Litestream to S3/R2).
+Serverless hosts without a disk (Vercel, Lambda, Cloudflare Workers) won't keep the data.
 
 ## Endpoints (all under `/api`)
 
@@ -57,7 +51,7 @@ It manages products (with image uploads), collections, Nail Guide articles, FAQs
 shipping / promotion settings, orders (status updates) and the inbox (contact messages, subscribers).
 
 Uploaded images are stored in `UPLOADS_DIR` (default `./data/uploads`) and served at `/uploads/*`.
-They live on local disk, so running more than one app instance needs shared storage (S3/R2) first.
+Like the database they live on local disk.
 
 ## Not production-ready yet
 - Payment is validated for shape only — integrate a real PSP (Stripe, etc.) in `src/routes/orders.ts`.

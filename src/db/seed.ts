@@ -1,7 +1,8 @@
 import { config } from "../config.js";
-import { migrate, pool, run, tx } from "./index.js";
+import { close, migrate, run, tx } from "./index.js";
 import { COLLECTIONS, FAQS, PRODUCTS, PROMO_TIERS, REVIEWS, SHAPES, SITE, SIZES, ARTICLES } from "./seed-data.js";
 
+// Child tables first so foreign keys never block the wipe.
 const TABLES = [
   "order_items", "orders", "sessions", "reviews", "product_collections", "products", "collections",
   "articles", "faqs", "settings", "discount_codes", "users", "subscribers", "contact_messages",
@@ -10,7 +11,7 @@ const TABLES = [
 /** Wipes every table and loads the seed data. Runs automatically when the DB is empty. */
 export async function seed() {
   await tx(async () => {
-    await run(`TRUNCATE ${TABLES.join(", ")} RESTART IDENTITY CASCADE`);
+    for (const t of TABLES) await run(`DELETE FROM ${t}`);
 
     for (const [i, c] of COLLECTIONS.entries()) {
       await run("INSERT INTO collections (handle, title, description, grp, palette, pattern, position) VALUES ($1, $2, $3, $4, $5, $6, $7)", [
@@ -66,6 +67,6 @@ if (process.argv[1]?.endsWith("seed.ts")) {
   }
   await migrate();
   await seed();
-  console.log(`Database reset and seeded (${new URL(config.databaseUrl).pathname.slice(1)}).`);
-  await pool.end();
+  console.log(`Database reset and seeded (${config.databasePath}).`);
+  await close();
 }

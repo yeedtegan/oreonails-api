@@ -6,7 +6,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { HTTPException } from "hono/http-exception";
 import { config } from "./config.js";
-import { isEmpty, migrate, pool } from "./db/index.js";
+import { close, isEmpty, migrate } from "./db/index.js";
 import { seed } from "./db/seed.js";
 import { loadUser, type AuthEnv } from "./lib/auth.js";
 import { catalog } from "./routes/catalog.js";
@@ -60,7 +60,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 // Let in-flight requests finish and close DB connections cleanly on deploy/restart.
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.once(sig, () => {
-    server.close(() => void pool.end().finally(() => process.exit(0)));
+    server.close(() => void close().finally(() => process.exit(0)));
     setTimeout(() => process.exit(0), 10_000).unref();
   });
 }

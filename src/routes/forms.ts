@@ -8,7 +8,7 @@ export const forms = new Hono();
 forms.post("/newsletter", async (c) => {
   const { email } = await body(c, z.object({ email: z.string().trim().email().max(200) }));
   await run("INSERT INTO subscribers (email) VALUES ($1) ON CONFLICT DO NOTHING", [email]);
-  const code = await one<{ code: string }>("SELECT code FROM discount_codes WHERE active ORDER BY created_at, code LIMIT 1");
+  const code = await one<{ code: string }>("SELECT code FROM discount_codes WHERE active = 1 ORDER BY created_at, code LIMIT 1");
   return c.json({ ok: true, code: code?.code ?? null });
 });
 

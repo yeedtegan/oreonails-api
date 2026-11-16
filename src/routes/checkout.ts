@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { randomBytes, randomInt } from "node:crypto";
 import { z } from "zod";
-import { one, run, tx } from "../db/index.js";
+import { NOW, one, run, tx } from "../db/index.js";
 import { quote } from "../lib/pricing.js";
 import { body } from "../lib/validate.js";
 import { config } from "../config.js";
@@ -160,7 +160,7 @@ checkout.post("/checkout", async (c) => {
 async function markPaid(number: string, ref: string | null, detail: string) {
   await tx(async () => {
     const row = await one<{ user_id: number | null; total: number }>(
-      `UPDATE orders SET payment_status = 'paid', paid_at = now(), payment_detail = $2, payment_ref = COALESCE($3, payment_ref)
+      `UPDATE orders SET payment_status = 'paid', paid_at = ${NOW}, payment_detail = $2, payment_ref = COALESCE($3, payment_ref)
        WHERE number = $1 AND payment_status = 'pending' RETURNING user_id, total`,
       [number, detail, ref],
     );
